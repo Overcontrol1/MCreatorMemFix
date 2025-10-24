@@ -1,13 +1,12 @@
 package com.overcontrol1.mcreatormemfix.asm;
 
-import com.google.gson.*;
+import com.overcontrol1.mcreatormemfix.ModConfig;
 import com.overcontrol1.mcreatormemfix.ModConfigEntry;
 import com.overcontrol1.mcreatormemfix.Reflections;
 import cpw.mods.modlauncher.LaunchPluginHandler;
 import cpw.mods.modlauncher.Launcher;
 import cpw.mods.modlauncher.serviceapi.ILaunchPluginService;
 import it.unimi.dsi.fastutil.objects.Object2ObjectArrayMap;
-import net.minecraftforge.fml.loading.FMLPaths;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
@@ -23,40 +22,15 @@ import java.util.*;
 public class MCreatorVariableTransformer implements ILaunchPluginService {
     private static final EnumSet<Phase> YAY = EnumSet.of(Phase.BEFORE);
     private static final EnumSet<Phase> NAY = EnumSet.noneOf(Phase.class);
-    private static final List<ModConfigEntry> modEntries = new ArrayList<>();
-    private static final Map<String, VariableTransformationProfile> storageProfiles = new Object2ObjectArrayMap<>();
+    private static final Map<String, VariableTransformationProfile> transformationProfiles = new Object2ObjectArrayMap<>();
 
     private static final String STORAGE_INTERNAL_CLASS_NAME = "com/overcontrol1/mcreatormemfix/MCreatorPlayerVariablesStorage";
-    public static final Path CONFIG_PATH = FMLPaths.CONFIGDIR.get().resolve("mcreator_mem_fix.json");
-
-    public static boolean NEEDS_SCANNING = false;
 
     public MCreatorVariableTransformer() {
-        if (Files.exists(CONFIG_PATH)) {
-            try (var reader = Files.newBufferedReader(CONFIG_PATH)) {
-                var object = JsonParser.parseReader(reader).getAsJsonObject();
-                var array = object.getAsJsonArray("mods");
+        ModConfig.load();
 
-                for (JsonElement e : array) {
-                    var o = e.getAsJsonObject();
-                    modEntries.add(new ModConfigEntry(o.get("package").getAsJsonPrimitive().getAsString(), o.get("className").getAsJsonPrimitive().getAsString()));
-                }
-            } catch (IOException | IllegalStateException e) {
-                if (e instanceof IOException io) throw new RuntimeException(io);
-                NEEDS_SCANNING = true;
-
-                try {
-                    Files.delete(CONFIG_PATH);
-                } catch (IOException ex) {
-                    throw new RuntimeException(ex);
-                }
-            }
-        } else {
-            NEEDS_SCANNING = true;
-        }
-
-        for (ModConfigEntry entry : modEntries) {
-            generate(entry);
+        for (ModConfigEntry entry : ModConfig.instance().entries()) {
+            generateTransformationProfile(entry);
         }
     }
 
@@ -71,7 +45,7 @@ public class MCreatorVariableTransformer implements ILaunchPluginService {
 
         if (isEmpty) return NAY;
 
-        for (ModConfigEntry entry : modEntries) {
+        for (ModConfigEntry entry : ModConfig.instance().entries()) {
             if (classType.getClassName().startsWith(entry.packageName())) return YAY;
         }
 
@@ -127,7 +101,7 @@ public class MCreatorVariableTransformer implements ILaunchPluginService {
     }
 
     private void processStorageClass(ClassNode classNode, Type classType) {
-        for (VariableTransformationProfile profile : storageProfiles.values()) {
+        for (VariableTransformationProfile profile : transformationProfiles.values()) {
             MethodNode supplierMethod =
                     DefaultVariableClassWriter.createStaticSupplierMethod(
                             classType.getInternalName(),
@@ -178,8 +152,10 @@ public class MCreatorVariableTransformer implements ILaunchPluginService {
 
     private VariableTransformationProfile getGeneratedMetadata(Type classType) {
         ModConfigEntry chosenEntry = null;
+        final ModConfig config = ModConfig.instance();
+        final List<ModConfigEntry> entries = config.entries();
 
-        for (ModConfigEntry entry : modEntries) {
+        for (ModConfigEntry entry : entries) {
             if (classType.getClassName().startsWith(entry.packageName())) {
                 chosenEntry = entry;
                 break;
@@ -188,7 +164,7 @@ public class MCreatorVariableTransformer implements ILaunchPluginService {
 
         if (chosenEntry == null) throw new IllegalStateException("Something went wrong generating a template storage.");
 
-        var profile = storageProfiles.get(chosenEntry.packageName());
+        var profile = transformationProfiles.get(chosenEntry.packageName());
 
         if (profile != null) {
             return profile;
@@ -196,10 +172,10 @@ public class MCreatorVariableTransformer implements ILaunchPluginService {
 
         throw new IllegalStateException("Something went wrong. Tried to get a generated variable storage when none existed for "
                 + chosenEntry.packageName() + ". This might mean a malformed config. Loaded config: %s, template profiles: %s"
-                .formatted(modEntries, storageProfiles));
+                .formatted(entries, transformationProfiles));
     }
 
-    private void generate(ModConfigEntry entry) {
+    private void generateTransformationProfile(ModConfigEntry entry) {
         String outerClassName = entry.packageName() + ".network." + entry.className() + "ModVariables";
         String outerClassInternalName = outerClassName.replace('.', '/');
         String innerClassInternalName = outerClassInternalName + "$PlayerVariables";
@@ -210,7 +186,7 @@ public class MCreatorVariableTransformer implements ILaunchPluginService {
             return;
         }
 
-        storageProfiles.put(entry.packageName(),
+        transformationProfiles.put(entry.packageName(),
                 new VariableTransformationProfile(outerClassName,
                         outerClassInternalName, innerClassInternalName,
                         entry.className().toLowerCase()));
