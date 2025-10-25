@@ -33,6 +33,7 @@ public record ModConfig(List<ModConfigEntry> entries, int spec, long hash) {
     public static void load() {
         if (!Files.exists(PATH)) {
             REQUIRES_REGENERATION = true;
+            instance = new ModConfig(List.of(), -1, 0);
             return;
         }
 
