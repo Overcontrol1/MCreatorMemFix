@@ -60,7 +60,7 @@ public record ModConfig(List<ModConfigEntry> entries, int spec, long hash) {
                 REQUIRES_REGENERATION = true;
                 hash = -1;
             } else {
-               hash = Long.parseLong(hashJson.getAsString(), 16);
+               hash = Long.parseUnsignedLong(hashJson.getAsString(), 16);
             }
 
             instance = new ModConfig(entries, spec, hash);

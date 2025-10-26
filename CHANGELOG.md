@@ -1,3 +1,6 @@
+# 1.0.4
+- Another hotfix to fix hash parsing - was failing about 50% of the time.
+
 # 1.0.3
 - Urgent hotfix because the mod just didn't work lol
 
